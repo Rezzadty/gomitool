@@ -1,8 +1,9 @@
-# Dot-source the feature scripts
+# Load external function scripts into current scope using dot-sourcing
+# $PSScriptRoot = folder where this script lives
 . "$PSScriptRoot\Scan\ScanVolumes.ps1"
 . "$PSScriptRoot\Temp\ScanTempFiles.ps1"
 
-# Displays the main menu with ASCII banner and available options
+# Main menu with ASCII banner, shown on first launch or returning from temp scanner
 function Show-Menu {
     Clear-Host
     Write-Host " ____   ___   __  __  ___ " -ForegroundColor Magenta
@@ -19,7 +20,7 @@ function Show-Menu {
     Write-Host ""
 }
 
-# Shows the option list again so the user can interact after viewing results
+# Inline options without clearing screen, so previous output stays visible
 function Show-Options {
     Write-Host "=== Volume Scanner ===" -ForegroundColor Cyan
     Write-Host ""
@@ -29,21 +30,28 @@ function Show-Options {
     Write-Host ""
 }
 
-# Main loop - shows menu, handles user input, and loops until user chooses to exit
+# Main loop - runs until user picks "3"
 $choice = ""
 $firstRun = $true
 do {
+    # Show full banner on first run, inline options after that
     if ($firstRun) {
         Show-Menu
         $firstRun = $false
     } else {
         Show-Options
     }
+    # Wait for user input
     $choice = Read-Host "Select an option (1-3)"
 
+    # Handle user choice
     switch ($choice) {
         "1" { Scan-Volumes }
-        "2" { Scan-TempFiles }
+        "2" {
+            # Returns $true if user picked "Back to main menu"
+            $backToMenu = Scan-TempFiles
+            if ($backToMenu) { $firstRun = $true }
+        }
         "3" { Write-Host "Goodbye!" -ForegroundColor Yellow }
         default { Write-Host "Invalid option. Try again." -ForegroundColor Red; Start-Sleep -Seconds 1 }
     }
