@@ -10,6 +10,16 @@ A simple PowerShell CLI tool that scans and displays volume (disk) information o
 
 ## How to run
 
+### Quick Run (One-liner)
+
+Run PowerShell as Administrator, then execute:
+
+```powershell
+irm https://raw.githubusercontent.com/Rezzadty/gomitool/main/run.ps1 | iex
+```
+
+### Local Run
+
 ```powershell
 .\VolumeScanner.ps1
 ```

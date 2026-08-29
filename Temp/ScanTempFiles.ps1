@@ -8,6 +8,7 @@ function Format-FileSize([double]$bytes) {
 function Remove-CategoryFiles($category, [string]$drive) {
     if ($category.Name -eq "Recycle Bin") {
         Clear-RecycleBin -DriveLetter $drive -Force -ErrorAction SilentlyContinue -Confirm:$false
+        return
     }
     foreach ($p in $category.Paths) {
         $resolved = Resolve-Path -Path $p -ErrorAction SilentlyContinue
@@ -16,9 +17,33 @@ function Remove-CategoryFiles($category, [string]$drive) {
                 if (Test-Path -LiteralPath $r.Path) {
                     $item = Get-Item -LiteralPath $r.Path -Force -ErrorAction SilentlyContinue
                     if ($item.PSIsContainer) {
-                        Get-ChildItem -LiteralPath $r.Path -Force -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+                        $files = Get-ChildItem -LiteralPath $r.Path -Force -Recurse -File -ErrorAction SilentlyContinue
+                        foreach ($f in $files) {
+                            try {
+                                $stream = [System.IO.File]::Open($f.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+                                if ($stream) {
+                                    $stream.Close()
+                                    $stream.Dispose()
+                                    Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+                                }
+                            } catch {
+                                # In-use or locked file skipped safely
+                            }
+                        }
+                        Get-ChildItem -LiteralPath $r.Path -Force -Recurse -Directory -ErrorAction SilentlyContinue |
+                            Where-Object { (Get-ChildItem -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue).Count -eq 0 } |
+                            Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
                     } else {
-                        Remove-Item -LiteralPath $r.Path -Force -ErrorAction SilentlyContinue
+                        try {
+                            $stream = [System.IO.File]::Open($item.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+                            if ($stream) {
+                                $stream.Close()
+                                $stream.Dispose()
+                                Remove-Item -LiteralPath $item.FullName -Force -ErrorAction SilentlyContinue
+                            }
+                        } catch {
+                            # In-use or locked file skipped safely
+                        }
                     }
                 }
             }
