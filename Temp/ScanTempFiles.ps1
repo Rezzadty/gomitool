@@ -1,15 +1,37 @@
-# Scans a selected volume for temporary files
-# Loops until user picks "Back to main menu", returns $true to reset main menu
+function Format-FileSize([double]$bytes) {
+    if ($bytes -ge 1GB) { return "{0:N2} GB" -f ($bytes / 1GB) }
+    if ($bytes -ge 1MB) { return "{0:N2} MB" -f ($bytes / 1MB) }
+    if ($bytes -ge 1KB) { return "{0:N2} KB" -f ($bytes / 1KB) }
+    return "{0} B" -f $bytes
+}
+
+function Remove-CategoryFiles($category, [string]$drive) {
+    if ($category.Name -eq "Recycle Bin") {
+        Clear-RecycleBin -DriveLetter $drive -Force -ErrorAction SilentlyContinue -Confirm:$false
+    }
+    foreach ($p in $category.Paths) {
+        $resolved = Resolve-Path -Path $p -ErrorAction SilentlyContinue
+        if ($resolved) {
+            foreach ($r in $resolved) {
+                if (Test-Path -LiteralPath $r.Path) {
+                    $item = Get-Item -LiteralPath $r.Path -Force -ErrorAction SilentlyContinue
+                    if ($item.PSIsContainer) {
+                        Get-ChildItem -LiteralPath $r.Path -Force -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+                    } else {
+                        Remove-Item -LiteralPath $r.Path -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+        }
+    }
+}
+
 function Scan-TempFiles {
-    # Get volumes with drive letters
     $volumes = Get-Volume | Where-Object { $_.DriveLetter -ne $null }
-    # "Back to main menu" is always the last option
     $backOption = $volumes.Count + 1
     $firstRun = $true
 
-    # Keep looping until user goes back
     while ($true) {
-        # First run clears screen, after that keeps results visible
         if ($firstRun) {
             Clear-Host
             Write-Host "=== Temporary File Scanner ===" -ForegroundColor Cyan
@@ -22,7 +44,6 @@ function Scan-TempFiles {
             Write-Host ""
         }
 
-        # List volumes for user to pick
         $index = 1
         foreach ($vol in $volumes) {
             $label = if ($vol.FileSystemLabel) { $vol.FileSystemLabel } else { "No Label" }
@@ -33,10 +54,8 @@ function Scan-TempFiles {
         Write-Host ""
         $volChoice = Read-Host "Select a volume to scan for temporary files (1-${backOption})"
 
-        # Return $true so main loop resets to full ASCII menu
         if ($volChoice -eq "$backOption") { return $true }
 
-        # Convert 1-based input to 0-based array index
         $volIndex = [int]$volChoice - 1
         if ($volIndex -lt 0 -or $volIndex -ge $volumes.Count) {
             Write-Host "Invalid selection." -ForegroundColor Red
@@ -46,53 +65,163 @@ function Scan-TempFiles {
 
         $selectedVol = $volumes[$volIndex]
         $driveLetter = $selectedVol.DriveLetter
+        $timestamp = (Get-Date).ToString("M/d/yyyy h:mm tt")
         Write-Host ""
-        Write-Host "Scanning [${driveLetter}:] for temporary files..." -ForegroundColor Yellow
+        Write-Host "Last scanned at $timestamp" -ForegroundColor DarkGray
+        Write-Host "Scanning [$($driveLetter):] for temporary files..." -ForegroundColor Yellow
         Write-Host ""
 
-        # Common temp file locations to scan
-        $tempPaths = @(
-            "${driveLetter}:\Windows\Temp",
-            "${driveLetter}:\Users\*\AppData\Local\Temp",
-            "${driveLetter}:\`$Recycle.Bin"
-        )
+        $isSystemDrive = Test-Path -LiteralPath "${driveLetter}:\Windows\System32"
 
-        $totalFiles = 0
-        $totalSizeMB = 0
+        if ($isSystemDrive) {
+            $categories = @(
+                @{
+                    Name = "Recycle Bin"
+                    Desc = "Deleted files waiting for permanent removal."
+                    Selected = $true
+                    Paths = @("${driveLetter}:\`$Recycle.Bin")
+                },
+                @{
+                    Name = "Temporary files"
+                    Desc = "App temp data left behind and safe to clear."
+                    Selected = $true
+                    Paths = @(
+                        "${driveLetter}:\Windows\Temp",
+                        "${driveLetter}:\Users\*\AppData\Local\Temp"
+                    )
+                },
+                @{
+                    Name = "Thumbnails"
+                    Desc = "Cached preview images for fast explorer loading."
+                    Selected = $true
+                    Paths = @(
+                        "${driveLetter}:\Users\*\AppData\Local\Microsoft\Windows\Explorer\thumbcache_*.db",
+                        "${driveLetter}:\Users\*\AppData\Local\Microsoft\Windows\Explorer\iconcache_*.db"
+                    )
+                },
+                @{
+                    Name = "Delivery Optimization Files"
+                    Desc = "Cached Windows update files for peer sharing."
+                    Selected = $true
+                    Paths = @(
+                        "${driveLetter}:\Windows\SoftwareDistribution\DeliveryOptimization",
+                        "${driveLetter}:\Windows\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization"
+                    )
+                },
+                @{
+                    Name = "Downloads"
+                    Desc = "Files stored in personal Downloads folder."
+                    Selected = $false
+                    Paths = @("${driveLetter}:\Users\*\Downloads")
+                },
+                @{
+                    Name = "Windows error reports and feedback diagnostics"
+                    Desc = "Crash logs and diagnostic data from system errors."
+                    Selected = $true
+                    Paths = @(
+                        "${driveLetter}:\ProgramData\Microsoft\Windows\WER",
+                        "${driveLetter}:\Users\*\AppData\Local\Microsoft\Windows\WER"
+                    )
+                },
+                @{
+                    Name = "DirectX Shader Cache"
+                    Desc = "GPU shader cache created to speed up game load time."
+                    Selected = $true
+                    Paths = @(
+                        "${driveLetter}:\Users\*\AppData\Local\D3DSCache",
+                        "${driveLetter}:\Users\*\AppData\Local\NVIDIA\DXCache",
+                        "${driveLetter}:\Users\*\AppData\Local\AMD\DxCache"
+                    )
+                },
+                @{
+                    Name = "Temporary Internet Files"
+                    Desc = "Webpage cache and browser data for offline preview."
+                    Selected = $true
+                    Paths = @(
+                        "${driveLetter}:\Users\*\AppData\Local\Microsoft\Windows\INetCache",
+                        "${driveLetter}:\Users\*\AppData\Local\Microsoft\Windows\WebCache"
+                    )
+                }
+            )
+        } else {
+            $categories = @(
+                @{
+                    Name = "Recycle Bin"
+                    Desc = "Deleted files waiting for permanent removal."
+                    Selected = $true
+                    Paths = @("${driveLetter}:\`$Recycle.Bin")
+                }
+            )
+        }
 
-        # Scan each temp path for files
-        foreach ($path in $tempPaths) {
-            # Resolve wildcards (*) into actual paths, skip if path doesn't exist
-            $resolved = Resolve-Path -Path $path -ErrorAction SilentlyContinue
-            if ($resolved) {
-                foreach ($r in $resolved) {
-                    if (Test-Path -LiteralPath $r.Path) {
-                        # Get all files recursively, skip permission errors
-                        $files = Get-ChildItem -Path $r.Path -Recurse -File -ErrorAction SilentlyContinue
-                        $count = ($files | Measure-Object).Count
-                        $sizeMB = [math]::Round(($files | Measure-Object -Property Length -Sum).Sum / 1MB, 2)
-                        if ($count -gt 0) {
-                            Write-Host "  $($r.Path)" -ForegroundColor Cyan
-                            Write-Host "    Files : $count"
-                            Write-Host "    Size  : ${sizeMB} MB"
-                            Write-Host ""
-                            $totalFiles += $count
-                            $totalSizeMB += $sizeMB
+        $totalSizeBytes = 0
+        $selectedSizeBytes = 0
+
+        foreach ($cat in $categories) {
+            $catFiles = 0
+            $catBytes = 0
+
+            foreach ($p in $cat.Paths) {
+                $resolved = Resolve-Path -Path $p -ErrorAction SilentlyContinue
+                if ($resolved) {
+                    foreach ($r in $resolved) {
+                        if (Test-Path -LiteralPath $r.Path) {
+                            $item = Get-Item -LiteralPath $r.Path -Force -ErrorAction SilentlyContinue
+                            if ($item.PSIsContainer) {
+                                $files = Get-ChildItem -LiteralPath $r.Path -Force -Recurse -File -ErrorAction SilentlyContinue
+                                if ($files) {
+                                    $catFiles += ($files | Measure-Object).Count
+                                    $catBytes += ($files | Measure-Object -Property Length -Sum).Sum
+                                }
+                            } else {
+                                $catFiles += 1
+                                $catBytes += $item.Length
+                            }
                         }
                     }
                 }
             }
+
+            $cat.Files = $catFiles
+            $cat.Bytes = $catBytes
+            $totalSizeBytes += $catBytes
+            if ($cat.Selected) {
+                $selectedSizeBytes += $catBytes
+            }
+
+            $box = if ($cat.Selected) { "[x]" } else { "[ ]" }
+            $sizeStr = Format-FileSize $catBytes
+
+            Write-Host ("-" * 70) -ForegroundColor DarkGray
+            Write-Host " $box " -NoNewline -ForegroundColor $(if ($cat.Selected) { "Green" } else { "DarkGray" })
+            Write-Host "$($cat.Name)" -NoNewline -ForegroundColor White
+            $spacing = 65 - $cat.Name.Length - $sizeStr.Length
+            if ($spacing -lt 1) { $spacing = 1 }
+            Write-Host (" " * $spacing) -NoNewline
+            Write-Host "$sizeStr" -ForegroundColor Yellow
+
+            Write-Host "     $($cat.Desc)" -ForegroundColor Gray
         }
 
-        # Show summary
-        Write-Host ("-" * 70) -ForegroundColor DarkGray
-        if ($totalFiles -eq 0) {
-            Write-Host "  No temporary files found on [${driveLetter}:]" -ForegroundColor Green
-        } else {
-            Write-Host "  Total temporary files : $totalFiles" -ForegroundColor Yellow
-            Write-Host "  Total size            : ${totalSizeMB} MB" -ForegroundColor Yellow
-        }
-        Write-Host ("-" * 70) -ForegroundColor DarkGray
+        Write-Host ("=" * 70) -ForegroundColor DarkGray
+        Write-Host "  Selected cleanup size : $(Format-FileSize $selectedSizeBytes)" -ForegroundColor Green
+        Write-Host "  Total scanned size    : $(Format-FileSize $totalSizeBytes)" -ForegroundColor Yellow
+        Write-Host ("=" * 70) -ForegroundColor DarkGray
         Write-Host ""
+
+        if ($selectedSizeBytes -gt 0) {
+            $cleanChoice = Read-Host "Clean up selected files? (Y/N)"
+            if ($cleanChoice -match '^(y|yes)$') {
+                Write-Host ""
+                Write-Host "Cleaning up selected files on [$($driveLetter):]..." -ForegroundColor Yellow
+                foreach ($cat in $categories) {
+                    if ($cat.Selected -and $cat.Bytes -gt 0) {
+                        Remove-CategoryFiles $cat $driveLetter
+                    }
+                }
+                Write-Host "Cleanup complete." -ForegroundColor Green
+                Write-Host ""
+            }
+        }
     }
 }
