@@ -191,6 +191,7 @@ function Scan-TempFiles {
                 if ($resolved) {
                     foreach ($r in $resolved) {
                         if (Test-Path -LiteralPath $r.Path) {
+                            Write-Host "  Scanning $($cat.Name)..." -ForegroundColor DarkGray
                             $item = Get-Item -LiteralPath $r.Path -Force -ErrorAction SilentlyContinue
                             if ($item.PSIsContainer) {
                                 $files = Get-ChildItem -LiteralPath $r.Path -Force -Recurse -File -ErrorAction SilentlyContinue
@@ -241,6 +242,7 @@ function Scan-TempFiles {
                 Write-Host "Cleaning up selected files on [$($driveLetter):]..." -ForegroundColor Yellow
                 foreach ($cat in $categories) {
                     if ($cat.Selected -and $cat.Bytes -gt 0) {
+                        Write-Host "  Removing $($cat.Name)..." -ForegroundColor DarkYellow
                         Remove-CategoryFiles $cat $driveLetter
                     }
                 }
