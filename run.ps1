@@ -7,4 +7,4 @@ Invoke-RestMethod "$repoBase/Scan/ScanVolumes.ps1" -OutFile "$tempDir\Scan\ScanV
 Invoke-RestMethod "$repoBase/Temp/ScanTempFiles.ps1" -OutFile "$tempDir\Temp\ScanTempFiles.ps1"
 Invoke-RestMethod "$repoBase/VolumeScanner.ps1" -OutFile "$tempDir\VolumeScanner.ps1"
 
-& "$tempDir\VolumeScanner.ps1"
+powershell -ExecutionPolicy Bypass -File "$tempDir\VolumeScanner.ps1"
