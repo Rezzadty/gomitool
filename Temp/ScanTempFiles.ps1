@@ -61,13 +61,14 @@ function Scan-TempFiles {
             Clear-Host
             Write-Host "=== Temporary File Scanner ===" -ForegroundColor Cyan
             Write-Host ""
-            Write-Host "Available volumes:" -ForegroundColor Green
-            Write-Host ""
             $firstRun = $false
         } else {
             Write-Host "=== Temporary File Scanner ===" -ForegroundColor Cyan
             Write-Host ""
         }
+
+        Write-Host "Available volumes:" -ForegroundColor Green
+        Write-Host ""
 
         $index = 1
         foreach ($vol in $volumes) {
